@@ -1,5 +1,5 @@
 const { Mongoose, mongooseConnection } = require('../mongoose_util')
-const ObjectId = Mongoose.SchemaTypes.ObjectId
+const ObjectId = Mongoose.Types.ObjectId
 const Mixed = Mongoose.Mixed
 
 const mxr_user_schema = new Mongoose.Schema({

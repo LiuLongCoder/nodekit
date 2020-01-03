@@ -1,3 +1,4 @@
+const Mongoose = require('mongoose')
 const Model = require('../../db/money')
 const XLSX = require('xlsx')
 const Moment = require('moment')
@@ -44,7 +45,7 @@ let cardJsons = [
     bank: '中信银行',
     mobile: '13218189892',
     cardNumber: '6226890311904386',
-    limit: 25000,
+    limit: 35000,
     billDayStr: '0',
     repaymentDayStr: '0',
     expireDayStr: '2022-11-01'
@@ -200,8 +201,21 @@ async function doSomethings () {
     // }
     // console.log(totalPrice * 0.997)
     //
+    //
+    // 到账了
+    // let records = await Model.MoneyRecord.find({ state: 0 })
+    // for (let key in records) {
+    //   let record = records[key]
+    //   record.state = 1
+    //   record = await record.save()
+    //   console.log(record)
+    // }
+
     // 计算信用卡该还多少钱
     await caculateBill()
+
+    // let card = await Model.MoneyCard.findOne().populate('user')
+    // console.log('card : ', card)
   } catch (e) {
     console.log(' do something wrong: ', e)
   }
@@ -276,6 +290,10 @@ async function parseAndSaveRecords () {
 
   for (let key in recordArray) {
     let recordJson = recordArray[key]
+    /// 过滤已经保存的数据
+    if (recordJson['5'] && recordJson['5'] === '1') {
+      continue
+    }
     let payDateStr = recordJson['1']
     let shopShortName = recordJson['2']
     let bankName = recordJson['3']
@@ -286,7 +304,7 @@ async function parseAndSaveRecords () {
       cardM = cardMap[bankName]
       shopM = shopMap[shopShortName]
     } else {
-      console.error(`error : bankName<${bankName}>, shopName<${shopShortName}> is wrong`)
+      console.error(`error : bankName<${bankName}>, shopName<${shopShortName}, price<${price}> is wrong`)
       continue
     }
 
@@ -313,11 +331,18 @@ async function parseAndSaveRecords () {
 }
 
 async function caculateBill () {
+  let totalMoney = 0
   let nowMoment = Moment(Moment().format('YYYY-MM-DD'), 'YYYY-MM-DD')
   let dayThisMonth = nowMoment.get('date')
-  let cards = await Model.MoneyCard.find()
+  let query = Model.MoneyCard.find()
+  query.find({ user: '5e0c40e625121975a09516dc' })
+  let cards = await query.exec()
+  // let cards = await Model.MoneyCard.find({ 'user': '5e0c40e625121975a09516dc', _id: { $in: ['5e00c8c72f8fe9353cd60850'] } })
+  let cardArray = []
   for (let key in cards) {
     let card = cards[key]
+    let cardJson = card.toJSON()
+    cardArray.push(cardJson)
     let billDay = parseInt(card.billDayStr)
     let repaymentDay = parseInt(card.repaymentDayStr)
     let preBillMoment = Moment(nowMoment)
@@ -325,6 +350,7 @@ async function caculateBill () {
     let billMoment = Moment(nowMoment)
     let repaymentMoment = Moment(nowMoment)
     let nextBillMoment = Moment(nowMoment)
+    let nextRepaymentMoment = Moment(nowMoment)
     if (billDay < repaymentDay) {
       if (dayThisMonth > repaymentDay) {
         billMoment.set('date', billDay).add(1, 'month')
@@ -345,7 +371,24 @@ async function caculateBill () {
     preBillMoment = Moment(billMoment).subtract(1, 'month')
     preRepaymentMoment = Moment(repaymentMoment).subtract(1, 'month')
     nextBillMoment = Moment(billMoment).add(1, 'month')
-    let records = await Model.MoneyRecord.find({ card: card._id })
+    nextRepaymentMoment = Moment(repaymentMoment).add(1, 'month')
+    /// 计算合理日期
+    let durationNextBill = 0
+    let durationNextRepayment = 0
+    let nowSeconds = nowMoment.unix()
+    if (nowMoment.isBefore(billMoment)) {
+      let billSeconds = billMoment.unix()
+      durationNextBill = (billSeconds - nowSeconds) / (60 * 60 * 24)
+      let repaymentSeconds = repaymentMoment.unix()
+      durationNextRepayment = (repaymentSeconds - nowSeconds) / (60 * 60 * 24)
+    } else {
+      let nextBillSeconds = nextBillMoment.unix()
+      durationNextBill = (nextBillSeconds - nowSeconds) / (60 * 60 * 24)
+      let nextRepaymentSeconds = nextRepaymentMoment.unix()
+      durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / (60 * 60 * 24)
+    }
+
+    let records = await Model.MoneyRecord.find({ card: card._id, repaymentState: 0 })
     let totalMoneyShouldReplay = 0
     let meiYouHuanMoney = 0
     let jiangYaoHuanMoney = 0
@@ -363,12 +406,28 @@ async function caculateBill () {
       }
       totalMoneyShouldReplay += price
     }
+    totalMoney = totalMoney + jiangYaoHuanMoney + haiMeiChuLaiMoney
+
+    cardJson.expireMoney = meiYouHuanMoney
+    cardJson.willRepaymentMoney = jiangYaoHuanMoney
+    cardJson.waitRepaymentMoney = haiMeiChuLaiMoney
+
+    console.log('>>>> 下次账单日时间:', durationNextBill)
+    console.log('>>>> 下次还款日日时间:', durationNextRepayment)
     console.log(`${card.bank} \n meiYouHuanMoney: ${meiYouHuanMoney} \n  jiangYaoHuanMoney: ${jiangYaoHuanMoney} \n haiMeiChuLaiMoney: ${haiMeiChuLaiMoney} \n replay ${totalMoneyShouldReplay}`)
     console.log(`preRepaymentMoment: ${preRepaymentMoment.format('YYYY-MM-DD')}, bill: ${billMoment.format('YYYY-MM-DD')}, repay: ${repaymentMoment.format('YYYY-MM-DD')}, nextbill: ${nextBillMoment.format('YYYY-MM-DD')} \n\n`)
   }
+  let resultJson = {}
+  resultJson.totalMoney = totalMoney
+  resultJson.list = cardArray
+  console.log('>>> cards: ', resultJson)
+  console.log('>>> all money :', totalMoney)
 }
 
-doSomethings()
+// doSomethings()
+
+let testNumber = '1234567890'
+console.log(testNumber.substr())
 
 // cardM.save(function (err, doc) {
 //   if (err) {

@@ -1,5 +1,23 @@
 const Model = require('../../db/mxr')
 
+async function test () {
+  Model.MXRTUser.find().populate('mxr_department_t').exec( (err, docs) => {
+    if (!err) {
+      for (let key in docs) {
+        console.log(docs[key].department)
+      }
+    }
+  })
+  return
+  let users = await Model.MXRTUser.find().populate('mxr_department_t')
+  for (let key in users) {
+    console.log(users[key])
+  }
+}
+
+test()
+return
+
 let userInfos = [
   { name: '刘龙', mobile: '13218189892' },
   { name: '项大山', mobile: '18550493606' },

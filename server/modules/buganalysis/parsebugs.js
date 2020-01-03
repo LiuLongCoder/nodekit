@@ -2,34 +2,34 @@ const XLSX = require('xlsx')
 const { colFromNumber, colOffset, numberOfCol } = require('../../util')
 const Model = require('../../db/mxr')
 
-let GlobalBugIndex = '201911'
-const GlobalExcelPath = 'F:\\Users\\Martin\\Documents\\MXR\\龙虎榜\\2019.11\\2019.11bugs.xlsx' // 从禅道拉下来的bug的excel表格
+let GlobalBugIndex = '201912'
+const GlobalExcelPath = 'F:\\Users\\Martin\\Documents\\MXR\\龙虎榜\\2019.12\\2019.12bugs.xlsx' // 从禅道拉下来的bug的excel表格
 
 const codeLineJson = {
-  '王纪凯': 61512,
-  '王东升': 3750,
-  '孙凯': 87967,
-  '武元元': 762,
-  '陈冬': 1748,
-  '宋维超': 3463,
-  '倪泽民': 2674,
-  '宋晓勇': 10864,
-  '杨泽龙': 3492,
-  '王峥': 100,
-  '曹言桩': 4781,
-  '曹广东': 3619,
+  '王纪凯': 1638,
+  '王东升': 526,
+  '孙凯': 22304,
+  '武元元': 4949,
+  '陈冬': 107739,
+  '宋维超': 10900,
+  '倪泽民': 6696,
+  '宋晓勇': 0,
+  '杨泽龙': 4993,
+  '王峥': 0,
+  '曹言桩': 3243,
+  '曹广东': 4749,
   '刘龙': 0,
-  '项大山': 11947,
-  '孔峰': 33535,
-  '高伟龙': 17290,
+  '项大山': 13061,
+  '孔峰': 12431,
+  '高伟龙': 12324,
   '宋雨': 0,
   '戢灿': 0,
   '窦小龙': 0,
   '朱亮宇': 0,
-  '刘元龙': 12730,
-  '张青林': 15946,
-  '何黎明': 33633,
-  '赵紫东': 752918
+  '刘元龙': 9400,
+  '张青林': 1035,
+  '何黎明': 9906,
+  '赵紫东': 1339
 }
 
 async function getAnalysisFromExcel () {
