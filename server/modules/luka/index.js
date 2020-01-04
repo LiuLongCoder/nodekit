@@ -212,10 +212,21 @@ async function doSomethings () {
     // }
 
     // 计算信用卡该还多少钱
-    await caculateBill()
+    // await caculateBill()
 
+    // await savePayWayTable()
     // let card = await Model.MoneyCard.findOne().populate('user')
     // console.log('card : ', card)
+
+    let records = await Model.MoneyRecord.find()
+    for (let key in records) {
+      let record = records[key]
+      record.rate = 0.003
+      record.payType = 1
+      record.payWay = '银联'
+      record = await record.save()
+      console.log(record)
+    }
   } catch (e) {
     console.log(' do something wrong: ', e)
   }
@@ -424,10 +435,18 @@ async function caculateBill () {
   console.log('>>> all money :', totalMoney)
 }
 
-// doSomethings()
+async function savePayWayTable () {
+  let payWayArray = [{ name: '银联', type: 1 },
+    { name: '微信', type: 2 }, { name: '支付宝', type: 3 }, { name: '云闪付', type: 4 }]
+  for (let key in payWayArray) {
+    let payWay = payWayArray[key]
+    let payWayM = new Model.MoneyPayWay(payWay)
+    payWayM = await payWayM.save()
+    console.log(payWayM)
+  }
+}
 
-let testNumber = '1234567890'
-console.log(testNumber.substr())
+doSomethings()
 
 // cardM.save(function (err, doc) {
 //   if (err) {

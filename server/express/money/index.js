@@ -63,19 +63,23 @@ function expressFunction (app) {
   })
 
   /** 登录
-   * {mobile: [string]}
+   * {mobile: [string], password: [string]}
    * */
   app.all(MyURL.URL_User_Login, async (req, res, next) => {
     let responseModel = new ResponseModel()
     try {
       let params = _MoneyExpressParams(req)
-      if (!_MoneyExpressValidateKey(params, ['mobile'])) {
+      if (!_MoneyExpressValidateKey(params, ['mobile', 'password'])) {
         responseModel.setErrCode(ERRCODE.loseParameter)
       } else {
         let user = await Model.MoneyUser.findOne({ mobile: params['mobile'] })
         if (user) {
           console.log('<info> login user: ', user)
-          responseModel.Body = user.toJSON()
+          if (user.password === params['password']) {
+            responseModel.Body = user.toJSON()
+          } else {
+            responseModel.setErrCode(ERRCODE.loginPasswordError)
+          }
         } else {
           responseModel.setErrCode(ERRCODE.loginError)
         }
@@ -146,7 +150,7 @@ function expressFunction (app) {
   })
 
   /** 添加信用卡
-   * {'userId', cardNumber: [string], bank: [string], limit: [number], billDayStr: [string], repaymentDayStr: [string],  }
+   * {userId, cardNumber: [string], bank: [string], limit: [number], billDayStr: [string], repaymentDayStr: [string],  }
    * {mobile: [string]}
    * */
   app.post(MyURL.URL_User_AddCreditCard, async (req, res, next) => {
@@ -175,16 +179,27 @@ function expressFunction (app) {
   })
 
   /** 添加信用卡刷卡记录
-   * {'card', [string], shop: [string], dateStr: [string], price: [number]}
+   * {card, [string], shop: [string], dateStr: [string], price: [number], payWay: [number]}
+   * {payWay: [string]}
+   * payType   1:银联   2:微信   3:支付宝  4:云闪付
    * */
   app.post(MyURL.URL_User_AddPayRecord, async (req, res, next) => {
     let responseModel = new ResponseModel()
     try {
       let params = _MoneyExpressParams(req)
-      if (!_MoneyExpressValidateKey(params, ['card', 'shop', 'dateStr', 'price'])) {
+      if (!_MoneyExpressValidateKey(params, ['card', 'shop', 'dateStr', 'price', 'payType'])) {
         responseModel.setErrCode(ERRCODE.loseParameter)
       } else {
         let record = new Model.MoneyRecord(params)
+        let payType = params['payType']
+        let price = params['price']
+        let rate = 0
+        if (payType === 1 && price > 1000) {
+          rate = 0.0053
+        } else {
+          rate = 0.003
+        }
+        record.rate = rate
         record = await record.save()
         if (!record) {
           responseModel.setErrCode(ERRCODE.serverError)
@@ -197,7 +212,80 @@ function expressFunction (app) {
       responseModel.setErrCode(ERRCODE.serverError)
       responseModel.Header.ErrMsg += e
       res.json(responseModel.toJSON())
-      console.error('[err] >>> 添加信用卡失败: ', e)
+      console.error('[err] >>> 添加信用卡记录失败: ', e)
+    }
+  })
+
+  /** 获取信用卡刷卡记录
+   * {userId, [string]}
+   * {cardIds: [string], shopIds: [string], 'page': [number], 'pageSize': [number], 'fromDate': [string], toDate: [string]}   shopIds、cardIds 以','隔开
+   * */
+  app.get(MyURL.URL_User_GetPayRecordList, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let params = _MoneyExpressParams(req)
+      console.log('<info> get param: ', params)
+      let page = 1
+      let pageSize = 50
+      if (params.hasOwnProperty('page') && params.hasOwnProperty('pageSize')) {
+        page = Math.max(parseInt(params['page']), 1)
+        pageSize = parseInt(params['pageSize'])
+      }
+      if (!_MoneyExpressValidateKey(params, ['userId'])) {
+        responseModel.setErrCode(ERRCODE.loseParameter)
+      } else {
+        let shopIds = []
+        let cardIds = []
+        let fromDate = undefined, toDate = undefined
+        if (params['cardIds']) {
+          cardIds = params['cardIds'].split(',')
+        }
+        if (params['shopIds']) {
+          shopIds = params['shopIds'].split(',')
+        }
+        if (params['fromDate'] && params['toDate']) {
+          let f = Moment(params['fromDate'], 'YYYY-MM-DD HH:mm:ss')
+          let t = Moment(params['toDate'], 'YYYY-MM-DD HH:mm:ss')
+          fromDate = new Date(f.get('year'), f.get('month'), f.get('date'), f.get('hour'), f.get('minute'), f.get('second'))
+          toDate = new Date(t.get('year'), t.get('month'), t.get('date'), t.get('hour'), t.get('minute'), t.get('second'))
+        }
+        let needQuery = false
+        let recordQuery = Model.MoneyRecord.find().sort('-date').populate(['card', 'shop'])
+        if (cardIds.length > 0) {
+          recordQuery.find({ card: { $in: cardIds } })
+          needQuery = true
+        }
+        if (shopIds.length === 0 && cardIds.length === 0) {
+          let cards = await Model.MoneyCard.find({ user: params['userId'] })
+          for (let key in cards) { cardIds.push(cards[key]._id) }
+        }
+        if (shopIds.length > 0) {
+          recordQuery.find({ shop: { $in: shopIds } })
+          needQuery = true
+        }
+        if (cardIds.length > 0) {
+          recordQuery.find({ card: { $in: cardIds } })
+          needQuery = true
+        }
+        if (fromDate && toDate) {
+          recordQuery.find({ date: { $gte: fromDate, $lte: toDate } })
+        }
+        recordQuery.limit(pageSize)
+        recordQuery.skip(Math.max(0, pageSize * (page - 1)))
+        if (needQuery) {
+          let records = await recordQuery.exec()
+          console.log('<info> get records :', records.length)
+          responseModel.Body = records
+        } else {
+          responseModel.Body = []
+        }
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取刷卡记录失败: ', e)
     }
   })
 
@@ -386,9 +474,9 @@ function expressFunction (app) {
         let cardArray = []
         let nowMoment = Moment(Moment().format('YYYY-MM-DD'), 'YYYY-MM-DD')
         let dayThisMonth = nowMoment.get('date')
-        let totalMoney = 0
-        let totalRepaymentMoney = 0
-        let totalWaitRepaymentMoney = 0
+        let totalMoney = 0 // 所有信用卡已经刷出的总额
+        let totalRepaymentMoney = 0 // 所有信用卡现在已经出的账单总额
+        let totalWaitRepaymentMoney = 0 // 所有信用卡还没出账单的总额
         for (let key in cards) {
           let card = cards[key]
           let cardJson = card.toJSON()
@@ -423,20 +511,26 @@ function expressFunction (app) {
           nextBillMoment = Moment(billMoment).add(1, 'month')
           nextRepaymentMoment = Moment(repaymentMoment).add(1, 'month')
           /// 计算合理日期
-          let durationNextBill = 0
-          let durationNextRepayment = 0
-          let cardTotalMoney = 0
+          let durationCurrentRepayment = -1 // 该信用卡距离这次还款日的天数
+          let durationNextBill = 0 // 该信用卡距离下次账单日的天数
+          let durationNextRepayment = 0 // 该信用卡距离下次还款日的天数
+          let cardTotalMoney = 0 // 该信用卡已经刷出的总额
           let nowSeconds = nowMoment.unix()
+          let oneDaySeconds = (60 * 60 * 24)
           if (nowMoment.isBefore(billMoment)) {
             let billSeconds = billMoment.unix()
-            durationNextBill = (billSeconds - nowSeconds) / (60 * 60 * 24)
+            durationNextBill = (billSeconds - nowSeconds) / oneDaySeconds
             let repaymentSeconds = repaymentMoment.unix()
-            durationNextRepayment = (repaymentSeconds - nowSeconds) / (60 * 60 * 24)
+            durationNextRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds
           } else {
             let nextBillSeconds = nextBillMoment.unix()
-            durationNextBill = (nextBillSeconds - nowSeconds) / (60 * 60 * 24)
+            durationNextBill = (nextBillSeconds - nowSeconds) / oneDaySeconds
             let nextRepaymentSeconds = nextRepaymentMoment.unix()
-            durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / (60 * 60 * 24)
+            durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / oneDaySeconds
+            if (nowMoment.isBefore(repaymentMoment)) {
+              let repaymentSeconds = repaymentMoment.unix()
+              durationCurrentRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds
+            }
           }
 
           let records = await Model.MoneyRecord.find({ card: card._id, repaymentState: 0 })
@@ -462,6 +556,7 @@ function expressFunction (app) {
 
           cardJson.billDate = billMoment.format('YYYY-MM-DD')
           cardJson.repaymentDate = repaymentMoment.format('YYYY-MM-DD')
+          cardJson.durationCurrentRepayment = durationCurrentRepayment
           cardJson.durationNextBill = durationNextBill
           cardJson.durationNextRepayment = durationNextRepayment
           cardJson.expireMoney = meiYouHuanMoney
@@ -481,6 +576,23 @@ function expressFunction (app) {
       responseModel.Header.ErrMsg += e
       res.json(responseModel.toJSON())
       console.error('[err] >>> 获取信用卡费用信息列表: ', e)
+    }
+  })
+
+  /** 获取支付途径数组
+   * */
+  app.get(MyURL.URL_Pay_GetPayWayList, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let payWays = await Model.MoneyPayWay.find()
+      console.log('<info> get payWays: ', payWays.length)
+      responseModel.Body = payWays
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取支付途径信息失败: ', e)
     }
   })
 }

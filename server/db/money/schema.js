@@ -1,3 +1,4 @@
+const Moment = require('moment')
 const { Mongoose, mongooseConnection } = require('../mongoose_util')
 const ObjectId = Mongoose.Types.ObjectId
 const Mixed = Mongoose.Mixed
@@ -116,6 +117,10 @@ const money_record_schema = new Mongoose.Schema({
   date: { type: Date },
   /// 刷卡金额
   price: { type: Number },
+  /// 费率
+  rate: { type: Number, default: 0 },
+  payType: { type: Number },
+  payWay: {type: String },
   /// 刷卡状态，0表示该笔信用卡刷卡待还， 1表示该笔金额已还
   repaymentState: { type: Number, default: 0 },
   /// 状态， 备用  1表示以到自己账上
@@ -130,8 +135,8 @@ const money_record_schema = new Mongoose.Schema({
 money_record_schema.pre('save', function (next) {
   if (this.dateStr) {
     try {
-      // need to do 时间不对
-      this.date = new Date(this.dateStr)
+      let m = Moment(this.dateStr, 'YYYY-MM-DD HH:mm:ss')
+      this.date = new Date(m.get('year'), m.get('month'), m.get('date'), m.get('hour'), m.get('minute'), m.get('second'))
     } catch (e) {
       console.error('money_record_schema pre save error: ', e)
     }
@@ -139,9 +144,20 @@ money_record_schema.pre('save', function (next) {
   next()
 })
 
+const money_payWay_schema = new Mongoose.Schema({
+  name: { type: String, require: true, unique: true }, // 支付途径描述
+  type: { type: Number, unique: true, default: 0 } // 支付途径数字展示
+}, {
+  strict: false,
+  timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+  minimize: false,
+  collection: 'money_payWay_t'
+})
+
 module.exports = {
   money_user_schema,
   money_card_schema,
   money_shop_schema,
-  money_record_schema
+  money_record_schema,
+  money_payWay_schema
 }
