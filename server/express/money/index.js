@@ -1,3 +1,4 @@
+const Mongoose = require('mongoose')
 const Moment = require('moment')
 const Model = require('../../db/money')
 const MyURL = require('./url')
@@ -9,6 +10,20 @@ function _MoneyExpressParams (req) {
     return req.body
   }
   return req.query
+}
+
+function _MoneyExpressHeader (req) {
+  try {
+    return JSON.parse(req.headers['money-header'])
+  } catch (e) {
+    console.error('<error> parse header err: ', e)
+  }
+  return {}
+}
+
+function _MoneyExpressUserIdFromHeader (req) {
+  let header = _MoneyExpressHeader(req)
+  return header['userId']
 }
 
 function _MoneyExpressValidateKey (params, validateKeys) {
@@ -27,7 +42,8 @@ function expressFunction (app) {
   /** 验证
    */
   app.use('/money/v1/*', (req, res, next) => {
-    // console.log('>> header: ', req.headers)
+    // console.log('>> header: ', typeof req.headers['money-header'])
+    // console.log('>> header: ', req.headers['money-header'])
     next()
   })
 
@@ -150,14 +166,14 @@ function expressFunction (app) {
   })
 
   /** 添加信用卡
-   * {userId, cardNumber: [string], bank: [string], limit: [number], billDayStr: [string], repaymentDayStr: [string],  }
+   * {user, cardNumber: [string], bank: [string], limit: [number], billDayStr: [string], repaymentDayStr: [string]} user即userId
    * {mobile: [string]}
    * */
   app.post(MyURL.URL_User_AddCreditCard, async (req, res, next) => {
     let responseModel = new ResponseModel()
     try {
       let params = _MoneyExpressParams(req)
-      if (!_MoneyExpressValidateKey(params, ['userId', 'cardNumber', 'bank', 'limit', 'billDayStr', 'repaymentDayStr'])) {
+      if (!_MoneyExpressValidateKey(params, ['user', 'cardNumber', 'bank', 'limit', 'billDayStr', 'repaymentDayStr'])) {
         responseModel.setErrCode(ERRCODE.loseParameter)
       } else {
         let card = await Model.MoneyCard.findOne({ cardNumber: params['cardNumber'] })
@@ -593,6 +609,155 @@ function expressFunction (app) {
       responseModel.Header.ErrMsg += e
       res.json(responseModel.toJSON())
       console.error('[err] >>> 获取支付途径信息失败: ', e)
+    }
+  })
+
+  /** 获取收入情况
+   * {type: [string]} // 枚举有 user shop
+   * {fromDate: [string], toDate: [string]}
+   * */
+  app.get(MyURL.URL_Pay_GetIncome, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let userId = _MoneyExpressUserIdFromHeader(req)
+      if (!userId || userId === '0') {
+        res.json(responseModel.toJSON())
+        return
+      }
+      console.log('userId : ', userId)
+      let params = _MoneyExpressParams(req)
+      if (!_MoneyExpressValidateKey(params, ['type'])) {
+        responseModel.setErrCode(ERRCODE.loseParameter)
+      } else {
+        let type = params['type']
+        let fromDate = undefined, toDate = undefined
+        if (params['fromDate'] && params['toDate']) {
+          let f = Moment(params['fromDate'], 'YYYY-MM-DD HH:mm:ss')
+          let t = Moment(params['toDate'], 'YYYY-MM-DD HH:mm:ss')
+          fromDate = new Date(f.get('year'), f.get('month'), f.get('date'), f.get('hour'), f.get('minute'), f.get('second'))
+          toDate = new Date(t.get('year'), t.get('month'), t.get('date'), t.get('hour'), t.get('minute'), t.get('second'))
+        }
+
+        let matchJson = {}
+        if (fromDate && toDate) {
+          matchJson.date = { $gte: fromDate, $lte: toDate }
+        }
+        let groupAggregateJson = {
+          $group: {
+            _id: { card: '$card', shop: '$shop' },
+            card: { $first: '$card' },
+            shop: { $first: '$shop' },
+            shopOwnerArray: { $first: '$shopModel.user' },
+            cardOwnerArray: { $first: '$cardModel.user' },
+            count: { $sum: 1 },
+            price: { $sum: '$price' },
+            returnPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } }
+          }
+        }
+
+        let userMap = {}
+        let userModelMap = {}
+        let shopMap = {}
+        let cardMap = {}
+        let cardIdArrayFilter = []
+        let shopIdArrayFilter = []
+        let currentUserCardList = []
+        let currentUserShopList = []
+        let users = await Model.MoneyUser.find()
+        for (let key in users) {
+          let user = users[key]
+          let userJson = user.toJSON()
+          userJson.shopList = []
+          userJson.cardList = []
+          userJson.spendJson = {}
+          userMap[user._id.toString()] = userJson
+          userModelMap[user._id.toString()] = user
+        }
+        let shops = await Model.MoneyShop.find()
+        for (let key in shops) {
+          let shop = shops[key]
+          let shopJson = shop.toJSON()
+          let userJson = userMap[shopJson.user]
+          if (userJson && userJson.shopList) {
+            // userJson.shopList.push(shopJson)
+            if (userJson._id.toString() === userId) {
+              currentUserShopList.push(shopJson)
+            }
+          }
+          shopMap[shop._id.toString()] = shopJson
+        }
+        let cards = await Model.MoneyCard.find()
+        for (let key in cards) {
+          let card = cards[key]
+          let cardJson = card.toJSON()
+          let userJson = userMap[cardJson.user]
+          if (userJson && userJson.cardList) {
+            // userJson.cardList.push(cardJson)
+            if (userJson._id.toString() === userId) {
+              currentUserCardList.push(cardJson)
+            }
+          }
+          cardMap[card._id.toString()] = cardJson
+        }
+
+        if (type === 'user') {
+          for (let key in currentUserCardList) {
+            cardIdArrayFilter.push(Mongoose.Types.ObjectId(currentUserCardList[key]._id))
+          }
+        } else if (type === 'shop') {
+          for (let key in currentUserShopList) {
+            shopIdArrayFilter.push(Mongoose.Types.ObjectId(currentUserShopList[key]._id))
+          }
+        }
+
+        if (cardIdArrayFilter.length > 0) {
+          matchJson.card = { $in: cardIdArrayFilter }
+        }
+        if (shopIdArrayFilter.length > 0) {
+          matchJson.shop = { $in: shopIdArrayFilter }
+        }
+        let matchAggregateJson = { $match: matchJson }
+        let lookupShopJson = { $lookup: { from: 'money_shop_t', localField: 'shop', foreignField: '_id', as: 'shopModel' } }
+        let lookupCardJson = { $lookup: { from: 'money_card_t', localField: 'card', foreignField: '_id', as: 'cardModel' } }
+        // let matchJson = { $match: { card: { $in: [Mongoose.Types.ObjectId('5e00c8c72f8fe9353cd60854'), Mongoose.Types.ObjectId('5e00c8c72f8fe9353cd60851')] } } }
+        let wrapDocs = await Model.MoneyRecord.aggregate([matchAggregateJson, lookupShopJson, lookupCardJson, groupAggregateJson]).exec()
+
+        for (let key in wrapDocs) {
+          let doc = wrapDocs[key]
+          if (doc.shopOwnerArray && Array.isArray(doc.shopOwnerArray) && doc.shopOwnerArray.length > 0 && Array.isArray(doc.cardOwnerArray) && doc.cardOwnerArray && doc.cardOwnerArray.length > 0) {
+            let shopOwner = doc.shopOwnerArray[0].toString()
+            let cardOwner = doc.cardOwnerArray[0].toString()
+            doc.shopOwner = shopOwner
+            doc.cardOwer = cardOwner
+            let shopUserJson = userMap[shopOwner]
+            let cardUserJson = userMap[cardOwner]
+            if (shopUserJson && cardUserJson) {
+              let spendJson = shopUserJson.spendJson
+              let userSpendJson = spendJson[cardOwner]
+              if (!userSpendJson) {
+                userSpendJson = {}
+                userSpendJson.list = []
+                userSpendJson.count = 0
+                userSpendJson.price = 0
+                userSpendJson.returnPrice = 0
+                userSpendJson.user = userModelMap[cardOwner]
+                spendJson[cardOwner] = userSpendJson
+              }
+              // userSpendJson.list.push(doc)
+              userSpendJson.price += doc.price
+              userSpendJson.returnPrice += doc.returnPrice
+              userSpendJson.count += doc.count
+            }
+          }
+        }
+        responseModel.Body = userMap
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取收入信息列表: ', e)
     }
   })
 }

@@ -218,15 +218,7 @@ async function doSomethings () {
     // let card = await Model.MoneyCard.findOne().populate('user')
     // console.log('card : ', card)
 
-    let records = await Model.MoneyRecord.find()
-    for (let key in records) {
-      let record = records[key]
-      record.rate = 0.003
-      record.payType = 1
-      record.payWay = '银联'
-      record = await record.save()
-      console.log(record)
-    }
+    testFunction ()
   } catch (e) {
     console.log(' do something wrong: ', e)
   }
@@ -447,6 +439,25 @@ async function savePayWayTable () {
 }
 
 doSomethings()
+
+async function testFunction () {
+  // let matchJson = { $match: { date: { $gte: '', $lte: '' }, shop: { $in: [] } } } // 自己的哪些店时间段的所有记录 店铺发钱用的
+  // let matchJson = { $match: { date: { $gte: '', $lte: '' }, card: { $in: [] } } } // 自己的哪些卡在什么时间段的所有记录 自己收钱用的
+  // let matchJson = { $match: { card: { $in: [Mongoose.Types.ObjectId('5e00c8c72f8fe9353cd60854'), Mongoose.Types.ObjectId('5e00c8c72f8fe9353cd60851')] } } }
+  // let groupJson = { $group: { _id: { card: '$card', shop: '$shop' }, card: { $first: '$card' }, shop: { $first: '$shop' }, count: { $sum: 1 }, price: { $sum: '$price' }, totalPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } } } }
+  // let docs = await Model.MoneyRecord.aggregate([matchJson, groupJson]).exec()
+  // for (let key in docs) {
+  //   console.log(docs[key])
+  // }
+
+  let groupJson = { $group: { _id: { card: '$card', shop: '$shop' }, card: { $first: '$card' }, shopOwner: { $first: '$shopModel.user' }, cardOwner: { $first: '$cardModel.user' }, shop: { $first: '$shop' }, count: { $sum: 1 }, price: { $sum: '$price' }, totalPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } } } }
+  let lookupJson = { $lookup: { from: 'money_shop_t', localField: 'shop', foreignField: '_id', as: 'shopModel' } }
+  let lookup2Json = { $lookup: { from: 'money_card_t', localField: 'card', foreignField: '_id', as: 'cardModel' } }
+  let docs = await Model.MoneyRecord.aggregate([lookupJson, lookup2Json, groupJson]).exec()
+  for (let key in docs) {
+    console.log(docs[key])
+  }
+}
 
 // cardM.save(function (err, doc) {
 //   if (err) {
