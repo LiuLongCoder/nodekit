@@ -6,7 +6,10 @@ const ERRCODE = {
   userNotExist: 10004,
   cardHasExist: 10005,
   shopHasExist: 10006,
-  loginPasswordError: 10007
+  loginPasswordError: 10007,
+  uploadFileError: 10008,
+  shopNotExist: 10009,
+  cardNotExist: 10010
 }
 Object.freeze(ERRCODE)
 
@@ -18,6 +21,9 @@ let ErrMsgDic = {
   10005: '信用卡已经存在',
   10006: '门店已经存在',
   10007: '密码错误',
+  10008: '上传文件失败',
+  10009: '门店不存在',
+  10010: '信用卡不存在',
   90000009: '服务端错误: '
 }
 

@@ -4,6 +4,12 @@ const Model = require('../../db/money')
 const MyURL = require('./url')
 const ResponseModel = require('../responseModel')
 const ERRCODE = require('../errCode').ERRCODE
+const FS = require('fs')
+const Path = require('path')
+const express = require('express')
+// 上传文件
+const UploadFileLib = require('multer')
+const upload = UploadFileLib({ dest: './server/web/moneyImages/' })
 
 function _MoneyExpressParams (req) {
   if (req.method === 'POST') {
@@ -39,12 +45,44 @@ function _MoneyExpressValidateKey (params, validateKeys) {
 }
 
 function expressFunction (app) {
+  app.use(express.static(Path.resolve(process.cwd(), 'server/web/')))
   /** 验证
    */
   app.use('/money/v1/*', (req, res, next) => {
     // console.log('>> header: ', typeof req.headers['money-header'])
     // console.log('>> header: ', req.headers['money-header'])
     next()
+  })
+
+  /* 上传图片
+ * */
+  app.post(MyURL.URL_File_Upload, upload.single('file'), function (req, res, next) {
+    // req.file is the `avatar` file
+    // req.body will hold the text fields, if there were any
+    let responseModel = new ResponseModel()
+    try {
+      let params = _MoneyExpressParams(req)
+      console.log(params)
+      if (req && req.file) {
+        let fileM = req.file
+        let filePath = Path.resolve(process.cwd(), fileM.path)
+        let extName = Path.extname(fileM.originalname)
+        let renamePath = filePath + extName
+        FS.renameSync(filePath, renamePath)
+        fileM.imgUrl = 'http://liulong.site/moneyImages/' + fileM.filename + extName
+        console.log(fileM)
+        let resultJson = fileM
+        responseModel.Body = resultJson
+      } else {
+        responseModel.setErrCode(ERRCODE.uploadFileError)
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 上传文件失败: ', e)
+    }
   })
 
   /** 用户注册， 添加用户
@@ -210,7 +248,8 @@ function expressFunction (app) {
         let payType = params['payType']
         let price = params['price']
         let rate = 0
-        if (payType === 1 && price > 1000) {
+        /// payType 1表示银联4表示云支付，大于1000的时候手续费是千分之5.3其他都是千分之3
+        if ((payType === 1 || payType === 4) && price > 1000) {
           rate = 0.0053
         } else {
           rate = 0.003
@@ -307,6 +346,7 @@ function expressFunction (app) {
 
   /** 添加门店
    * {user: [string], name: [string], mobile: [number]}
+   * {shopId:[string], shopQRCodeImageSrc} // shopId存在则表示更新，否则增加
    * */
   app.post(MyURL.URL_User_AddShop, async (req, res, next) => {
     let responseModel = new ResponseModel()
@@ -315,13 +355,28 @@ function expressFunction (app) {
       if (!_MoneyExpressValidateKey(params, ['user', 'name', 'mobile'])) {
         responseModel.setErrCode(ERRCODE.loseParameter)
       } else {
-        let shop = await Model.MoneyShop.findOne({ name: params['name'] })
-        if (shop) {
-          responseModel.setErrCode(ERRCODE.shopHasExist)
+        let shopId = params['shopId']
+        if (shopId !== null && shopId !== undefined) {
+          let shop = await Model.MoneyShop.findOne({ _id: shopId })
+          if (shop) {
+            shop.shopQRCodeImageSrc = params['shopQRCodeImageSrc']
+            shop.name = params['name']
+            shop.mobile = params['mobile']
+            shop = await shop.save()
+            console.log('update shop: ', shop)
+            responseModel.Body = shop.toJSON()
+          } else {
+            responseModel.setErrCode(ERRCODE.shopHasExist)
+          }
         } else {
-          shop = new Model.MoneyShop(params)
-          shop = await shop.save()
-          console.log('[info] add shop success: ', shop)
+          let shop = await Model.MoneyShop.findOne({ name: params['name'] })
+          if (shop) {
+            responseModel.setErrCode(ERRCODE.shopHasExist)
+          } else {
+            shop = new Model.MoneyShop(params)
+            shop = await shop.save()
+            console.log('[info] add shop success: ', shop)
+          }
         }
       }
       res.json(responseModel.toJSON())
@@ -387,6 +442,32 @@ function expressFunction (app) {
       responseModel.Header.ErrMsg += e
       res.json(responseModel.toJSON())
       console.error('[err] >>> 获取信用卡列表: ', e)
+    }
+  })
+
+  /** 获取用户门店信息
+   * {shopId: [string]}
+   * */
+  app.get(MyURL.URL_User_GetShop, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let params = _MoneyExpressParams(req)
+      if (!_MoneyExpressValidateKey(params, ['shopId'])) {
+        responseModel.setErrCode(ERRCODE.loseParameter)
+      } else {
+        let shop = await Model.MoneyShop.findOne({ _id: params['shopId'] })
+        if (shop) {
+          responseModel.Body = shop
+        } else {
+          responseModel.setErrCode(ERRCODE.shopNotExist)
+        }
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取门店信息失败: ', e)
     }
   })
 
@@ -533,19 +614,19 @@ function expressFunction (app) {
           let cardTotalMoney = 0 // 该信用卡已经刷出的总额
           let nowSeconds = nowMoment.unix()
           let oneDaySeconds = (60 * 60 * 24)
-          if (nowMoment.isBefore(billMoment)) {
+          if (nowMoment.isSameOrBefore(billMoment)) {
             let billSeconds = billMoment.unix()
-            durationNextBill = (billSeconds - nowSeconds) / oneDaySeconds
+            durationNextBill = (billSeconds - nowSeconds) / oneDaySeconds + 1
             let repaymentSeconds = repaymentMoment.unix()
-            durationNextRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds
+            durationNextRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds + 1
           } else {
             let nextBillSeconds = nextBillMoment.unix()
-            durationNextBill = (nextBillSeconds - nowSeconds) / oneDaySeconds
+            durationNextBill = (nextBillSeconds - nowSeconds) / oneDaySeconds + 1
             let nextRepaymentSeconds = nextRepaymentMoment.unix()
-            durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / oneDaySeconds
-            if (nowMoment.isBefore(repaymentMoment)) {
+            durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / oneDaySeconds + 1
+            if (nowMoment.isSameOrBefore(repaymentMoment)) {
               let repaymentSeconds = repaymentMoment.unix()
-              durationCurrentRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds
+              durationCurrentRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds + 1
             }
           }
 
@@ -557,11 +638,11 @@ function expressFunction (app) {
             let record = records[recordKey]
             let price = record.price
             let payMoment = Moment(record.dateStr, 'YYYY-MM-DD')
-            if (payMoment.isBefore(preBillMoment)) {
+            if (payMoment.isSameOrBefore(preBillMoment)) {
               meiYouHuanMoney += price
-            } else if (payMoment.isBefore(billMoment) && !nowMoment.isBefore(billMoment)) {
+            } else if (payMoment.isSameOrBefore(billMoment) && !nowMoment.isSameOrBefore(billMoment)) {
               jiangYaoHuanMoney += price
-            } else if (payMoment.isBefore(nextBillMoment)) {
+            } else if (payMoment.isSameOrBefore(nextBillMoment)) {
               haiMeiChuLaiMoney += price
             }
             cardTotalMoney = jiangYaoHuanMoney + haiMeiChuLaiMoney
@@ -592,6 +673,60 @@ function expressFunction (app) {
       responseModel.Header.ErrMsg += e
       res.json(responseModel.toJSON())
       console.error('[err] >>> 获取信用卡费用信息列表: ', e)
+    }
+  })
+
+  /* 信用卡还款
+  * {userId:[string], cardId: [string]}
+  * */
+  app.post(MyURL.URL_User_RepaymentCard, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let userId = _MoneyExpressUserIdFromHeader(req)
+      let params = _MoneyExpressParams(req)
+      if (!_MoneyExpressValidateKey(params, ['userId', 'cardId'])) {
+        responseModel.setErrCode(ERRCODE.loseParameter)
+      } else {
+        let cardId = params['cardId']
+        let card = await Model.MoneyCard.findOne({ _id: cardId, user: userId })
+        if (card) {
+          let nowMoment = Moment(Moment().format('YYYY-MM-DD'), 'YYYY-MM-DD')
+          let dayThisMonth = nowMoment.get('date')
+          let billDay = parseInt(card.billDayStr)
+          let repaymentDay = parseInt(card.repaymentDayStr)
+          let billMoment = Moment(nowMoment)
+          if (billDay < repaymentDay) {
+            if (dayThisMonth > repaymentDay) {
+              billMoment.set('date', billDay).add(1, 'month')
+            } else {
+              billMoment.set('date', billDay)
+            }
+          } else {
+            if (dayThisMonth > repaymentDay) {
+              billMoment.set('date', billDay)
+            } else {
+              billMoment.set('date', billDay).subtract(1, 'month')
+            }
+          }
+          if (nowMoment.isAfter(billMoment)) {
+            let t = Moment(billMoment).add(1, 'day')
+            let toDate = new Date(t.get('year'), t.get('month'), t.get('date'), 0, 0, 0)
+            console.log(' toDate: ' + toDate)
+            let result = await Model.MoneyRecord.find({ card: cardId, date: { $lt: toDate }, repaymentState: 0 }).updateMany({ repaymentState: 1 }).exec()
+            console.log(result)
+          } else {
+            responseModel.setErrCode(ERRCODE.serverError)
+          }
+        } else {
+          responseModel.setErrCode(ERRCODE.cardNotExist)
+        }
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取所有门店信息列表: ', e)
     }
   })
 
@@ -747,6 +882,19 @@ function expressFunction (app) {
               userSpendJson.price += doc.price
               userSpendJson.returnPrice += doc.returnPrice
               userSpendJson.count += doc.count
+            }
+          }
+        }
+        // 对returnPrice向下取两位小数
+        for (let key in userMap) {
+          let shopUserJson = userMap[key]
+          if (shopUserJson) {
+            let spendJson = shopUserJson.spendJson
+            for (let sKey in spendJson) {
+              let userSpendJson = spendJson[sKey]
+              if (userSpendJson) {
+                userSpendJson.returnPrice = Math.floor(userSpendJson.returnPrice * 100) / 100
+              }
             }
           }
         }

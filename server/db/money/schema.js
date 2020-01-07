@@ -49,7 +49,7 @@ const money_card_schema = new Mongoose.Schema({
   /// 卡号
   cardNumber: { type: String, required: true, unique: true },
   // 银行名称
-  bank: { type: String, index: true, unique: true },
+  bank: { type: String, index: true, required: true },
   /// 预留手机号
   mobile: { type: String },
   /// 限额
@@ -88,7 +88,9 @@ const money_shop_schema = new Mongoose.Schema({
   /// 状态， 备用
   state: { type: Number, default: 0 },
   /// 所属人
-  user: { type: ObjectId, ref: 'money_user_t' }
+  user: { type: ObjectId, ref: 'money_user_t' },
+  /// 收款码图片地址
+  shopQRCodeImageSrc: { type: String }
 }, {
   strict: false,
   timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
@@ -120,7 +122,7 @@ const money_record_schema = new Mongoose.Schema({
   /// 费率
   rate: { type: Number, default: 0 },
   payType: { type: Number },
-  payWay: {type: String },
+  payWay: { type: String },
   /// 刷卡状态，0表示该笔信用卡刷卡待还， 1表示该笔金额已还
   repaymentState: { type: Number, default: 0 },
   /// 状态， 备用  1表示以到自己账上

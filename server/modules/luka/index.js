@@ -1,5 +1,6 @@
 const Mongoose = require('mongoose')
 const Model = require('../../db/money')
+const ServerModel = require('../../db/moneyserver')
 const XLSX = require('xlsx')
 const Moment = require('moment')
 const { colFromNumber, colOffset, numberOfCol } = require('../../util')
@@ -450,12 +451,36 @@ async function testFunction () {
   //   console.log(docs[key])
   // }
 
-  let groupJson = { $group: { _id: { card: '$card', shop: '$shop' }, card: { $first: '$card' }, shopOwner: { $first: '$shopModel.user' }, cardOwner: { $first: '$cardModel.user' }, shop: { $first: '$shop' }, count: { $sum: 1 }, price: { $sum: '$price' }, totalPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } } } }
-  let lookupJson = { $lookup: { from: 'money_shop_t', localField: 'shop', foreignField: '_id', as: 'shopModel' } }
-  let lookup2Json = { $lookup: { from: 'money_card_t', localField: 'card', foreignField: '_id', as: 'cardModel' } }
-  let docs = await Model.MoneyRecord.aggregate([lookupJson, lookup2Json, groupJson]).exec()
-  for (let key in docs) {
-    console.log(docs[key])
+  // let groupJson = { $group: { _id: { card: '$card', shop: '$shop' }, card: { $first: '$card' }, shopOwner: { $first: '$shopModel.user' }, cardOwner: { $first: '$cardModel.user' }, shop: { $first: '$shop' }, count: { $sum: 1 }, price: { $sum: '$price' }, totalPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } } } }
+  // let lookupJson = { $lookup: { from: 'money_shop_t', localField: 'shop', foreignField: '_id', as: 'shopModel' } }
+  // let lookup2Json = { $lookup: { from: 'money_card_t', localField: 'card', foreignField: '_id', as: 'cardModel' } }
+  // let docs = await Model.MoneyRecord.aggregate([lookupJson, lookup2Json, groupJson]).exec()
+  // for (let key in docs) {
+  //   console.log(docs[key])
+  // }
+
+  // let localUsers = await Model.MoneyUser.find()
+  // for (let key in localUsers) {
+  //   let lcoalUser = localUsers[key]
+  //   let serverUser = ServerModel.MoneyUser(lcoalUser.toJSON())
+  //   serverUser = await serverUser.save()
+  //   console.log('>>>> ', serverUser)
+  // }
+
+  // let localShops = await Model.MoneyShop.find()
+  // for (let key in localShops) {
+  //   let lcoalShop = localShops[key]
+  //   let serverShop = ServerModel.MoneyShop(lcoalShop.toJSON())
+  //   serverShop = await serverShop.save()
+  //   console.log('>>>> ', serverShop)
+  // }
+
+  let localModels = await ServerModel.MoneyCard.find()
+  for (let key in localModels) {
+    let lcoalModel = localModels[key]
+    let serverModel = Model.MoneyCard(lcoalModel.toJSON())
+    serverModel = await serverModel.save()
+    console.log('>>>> ', serverModel)
   }
 }
 

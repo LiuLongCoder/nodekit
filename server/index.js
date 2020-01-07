@@ -7,6 +7,7 @@ process.env.TZ = 'Asia/Shanghai'
 const Path = require('path')
 const express = require('express')
 const MoneyExpress = require('./express/money')
+
 const app = express()
 
 let options = {
@@ -36,7 +37,7 @@ app.use((req, res, next) => {
 
 MoneyExpress(app)
 
-const httpPort = 3000
+const httpPort = 80
 // const httpsPort = 443
 const http = require('http')
 let server = http.createServer(app)
