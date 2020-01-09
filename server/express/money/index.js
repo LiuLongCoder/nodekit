@@ -151,7 +151,8 @@ function expressFunction (app) {
         let user = await Model.MoneyUser.findOne({ mobile: params['mobile'] })
         if (user) {
           console.log('<info> login user: ', user)
-          if (user.password === params['password']) {
+          user = await Model.MoneyUser.findOne({ mobile: params['mobile'], password: params['password'] })
+          if (user) {
             responseModel.Body = user.toJSON()
           } else {
             responseModel.setErrCode(ERRCODE.loginPasswordError)

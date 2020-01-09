@@ -46,7 +46,7 @@ const money_user_schema = new Mongoose.Schema({
 
 /// 保证用户密码安全
 function _securityUser (doc) {
-  if (doc.password) {
+  if (doc && doc.password) {
     doc.password = undefined
   }
 }
@@ -90,7 +90,7 @@ const money_card_schema = new Mongoose.Schema({
 
 /// 保证银行卡卡号安全
 function _securityCard (card) {
-  if (card.cardNumber.length > 8) {
+  if (card && card.cardNumber && card.cardNumber.length > 8) {
     let cardNumber = card.cardNumber
     card.cardNumber = cardNumber.substring(0, 4) + '****' + cardNumber.substr(cardNumber.length - 4)
   }
