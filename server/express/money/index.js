@@ -1,4 +1,4 @@
-const Mongoose = require('mongoose')
+﻿const Mongoose = require('mongoose')
 const Moment = require('moment')
 const Model = require('../../db/money')
 const MyURL = require('./url')
@@ -20,9 +20,14 @@ function _MoneyExpressParams (req) {
 
 function _MoneyExpressHeader (req) {
   try {
-    return JSON.parse(req.headers['money-header'])
+    let header = req.headers['app-header']
+    if (!header) {
+      /// 适配以前的版本
+      header = req.headers['money-header']
+    }
+    return JSON.parse(header)
   } catch (e) {
-    console.error('<error> parse header err: ', e)
+    console.error('[error] parse header err: ', e)
   }
   return {}
 }
@@ -36,7 +41,7 @@ function _MoneyExpressValidateKey (params, validateKeys) {
   if (params) {
     for (let key in validateKeys) {
       if (!params[validateKeys[key]]) {
-        console.log(`<MoneyExpress_validataKey err> 参数缺少 ${validateKeys[key]}`)
+        console.log(`[MoneyExpress_validateKey err] 参数缺少 ${validateKeys[key]}`)
         return false
       }
     }
@@ -908,6 +913,10 @@ function expressFunction (app) {
       console.error('[err] >>> 获取收入信息列表: ', e)
     }
   })
+
+  // app服务
+  const APPExpress = require('../app')
+  APPExpress(app)
 }
 
 module.exports = expressFunction

@@ -9,11 +9,16 @@ const ERRCODE = {
   loginPasswordError: 10007,
   uploadFileError: 10008,
   shopNotExist: 10009,
-  cardNotExist: 10010
+  cardNotExist: 10010,
+  //
+  // app相关
+  headerNotValid: 10011,
+  appNotExist: 10012
 }
 Object.freeze(ERRCODE)
 
 let ErrMsgDic = {
+  90000009: '服务端错误: ',
   10001: '缺少参数',
   10002: '用户不存在或者密码错误',
   10003: '该手机已经注册',
@@ -24,7 +29,10 @@ let ErrMsgDic = {
   10008: '上传文件失败',
   10009: '门店不存在',
   10010: '信用卡不存在',
-  90000009: '服务端错误: '
+  //
+  //
+  10011: '头部信息有误',
+  10012: '该app不存在或已下架'
 }
 
 module.exports = {

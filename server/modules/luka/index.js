@@ -1,10 +1,26 @@
 const Mongoose = require('mongoose')
 const Model = require('../../db/money')
+const APPModel = require('../../db/app')
 const ServerModel = require('../../db/moneyserver')
 const XLSX = require('xlsx')
 const Moment = require('moment')
 const { colFromNumber, colOffset, numberOfCol } = require('../../util')
 
+let appJson = { bundleId: 'com.mxr.money',
+  version: '1.0.1',
+  osType: 'android',
+  dandelion: 'https://www.pgyer.com/luka',
+  forceUpgrade: 0,
+  upgradeDescription: '解决了已知bug，增加了还款记录，建议升级'
+}
+
+let app = new APPModel.AppVersion(appJson)
+app.save( (err, doc) => {
+  console.log('err: ', err)
+  console.log('doc: ', doc)
+} )
+
+return
 let cardJsons = [
   {
     bank: '中国银行',

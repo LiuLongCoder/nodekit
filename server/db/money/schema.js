@@ -44,6 +44,23 @@ const money_user_schema = new Mongoose.Schema({
   collection: 'money_user_t'
 })
 
+/// 保证用户密码安全
+function _securityUser (doc) {
+  if (doc.password) {
+    doc.password = undefined
+  }
+}
+
+money_user_schema.post('find', (docs) => {
+  for (let key in docs) {
+    _securityUser(docs[key])
+  }
+})
+
+money_user_schema.post('findOne', (doc) => {
+  _securityUser(doc)
+})
+
 /// 信用卡
 const money_card_schema = new Mongoose.Schema({
   /// 卡号
@@ -69,6 +86,25 @@ const money_card_schema = new Mongoose.Schema({
   timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
   minimize: false,
   collection: 'money_card_t'
+})
+
+/// 保证银行卡卡号安全
+function _securityCard (card) {
+  if (card.cardNumber.length > 8) {
+    let cardNumber = card.cardNumber
+    card.cardNumber = cardNumber.substring(0, 4) + '****' + cardNumber.substr(cardNumber.length - 4)
+  }
+}
+
+// post 执行完方法后调用
+money_card_schema.post('find', (docs) => {
+  for (let key in docs) {
+    _securityCard(docs[key])
+  }
+})
+
+money_card_schema.post('findOne', (doc) => {
+  _securityCard(doc)
 })
 
 /// 门店
