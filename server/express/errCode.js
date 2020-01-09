@@ -1,4 +1,5 @@
 const ERRCODE = {
+  serverForbidden: 90000000,
   serverError: 90000009,
   loseParameter: 10001,
   loginError: 10002,
@@ -18,6 +19,7 @@ const ERRCODE = {
 Object.freeze(ERRCODE)
 
 let ErrMsgDic = {
+  90000000: '禁止访问',
   90000009: '服务端错误: ',
   10001: '缺少参数',
   10002: '用户不存在或者密码错误',

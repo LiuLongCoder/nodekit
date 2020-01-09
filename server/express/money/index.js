@@ -7,6 +7,8 @@ const ERRCODE = require('../errCode').ERRCODE
 const FS = require('fs')
 const Path = require('path')
 const express = require('express')
+const Crypto = require('crypto')
+
 // 上传文件
 const UploadFileLib = require('multer')
 const upload = UploadFileLib({ dest: './server/web/moneyImages/' })
@@ -54,9 +56,24 @@ function expressFunction (app) {
   /** 验证
    */
   app.use('/money/v1/*', (req, res, next) => {
-    // console.log('>> header: ', typeof req.headers['money-header'])
-    // console.log('>> header: ', req.headers['money-header'])
-    next()
+    let header = _MoneyExpressHeader(req)
+    let isValid = false
+    if (header) {
+      let jsonString = header['jsonString']
+      let signature = header['signature']
+      if (jsonString && signature) {
+        let sig = Crypto.createHash('md5').update('luka' + jsonString + 'luka').digest('hex')
+        if (sig === signature) {
+          isValid = true
+          next()
+        }
+      }
+    }
+    if (!isValid) {
+      let responseModel = new ResponseModel()
+      responseModel.setErrCode(ERRCODE.serverForbidden)
+      res.status(403).json(responseModel.toJSON())
+    }
   })
 
   /* 上传图片
