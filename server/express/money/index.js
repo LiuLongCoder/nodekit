@@ -27,7 +27,9 @@ function _MoneyExpressHeader (req) {
       /// 适配以前的版本
       header = req.headers['money-header']
     }
-    return JSON.parse(header)
+    if (header) {
+      return JSON.parse(header)
+    }
   } catch (e) {
     console.error('[error] parse header err: ', e)
   }
@@ -302,7 +304,6 @@ function expressFunction (app) {
     let responseModel = new ResponseModel()
     try {
       let params = _MoneyExpressParams(req)
-      console.log('<info> get param: ', params)
       let page = 1
       let pageSize = 50
       if (params.hasOwnProperty('page') && params.hasOwnProperty('pageSize')) {
@@ -328,7 +329,8 @@ function expressFunction (app) {
           toDate = new Date(t.get('year'), t.get('month'), t.get('date'), t.get('hour'), t.get('minute'), t.get('second'))
         }
         let needQuery = false
-        let recordQuery = Model.MoneyRecord.find().sort('-date').populate(['card', 'shop'])
+        /// 根据date 和 createdAt倒序排列
+        let recordQuery = Model.MoneyRecord.find().sort('-date -createdAt').populate(['card', 'shop'])
         if (cardIds.length > 0) {
           recordQuery.find({ card: { $in: cardIds } })
           needQuery = true

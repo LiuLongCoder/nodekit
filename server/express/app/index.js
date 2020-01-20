@@ -13,8 +13,13 @@ function _ExpressParams (req) {
 
 function _ExpressHeader (req) {
   try {
-    if (req.headers['app-header']) {
-      return JSON.parse(req.headers['app-header'])
+    let header = req.headers['app-header']
+    if (!header) {
+      /// 适配以前的版本
+      header = req.headers['money-header']
+    }
+    if (header) {
+      return JSON.parse(header)
     }
   } catch (e) {
     console.error('[error] parse header err: ', e)
@@ -52,6 +57,7 @@ function expressFunction (app) {
       } else {
         let appM = await Model.AppVersion.findOne({ bundleId: header['bundleId'], osType: header['osType'] })
         if (appM) {
+          console.log('appM : ', appM)
           responseModel.Body = appM.toJSON()
         } else {
           responseModel.setErrCode(ERRCODE.appNotExist)

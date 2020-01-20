@@ -6,6 +6,34 @@ const XLSX = require('xlsx')
 const Moment = require('moment')
 const { colFromNumber, colOffset, numberOfCol } = require('../../util')
 
+async function doSome () {
+  let users = await Model.MoneyUser.find()
+  let userDic = {}
+  for (let key in users) {
+    let userM = users[key]
+    userDic[userM._id.toString()] = userM
+  }
+  let records = await Model.MoneyRecord.find().populate({ path: 'card', select: ['user', 'bank'] })
+  console.log('records:', records)
+  let recordArray = []
+  for (let key in records) {
+    let recordM = records[key]
+    let userId = recordM.card.user.toString()
+    let recordJson = recordM.toJSON()
+    let user = userDic[userId]
+    if (user) {
+      recordJson.userName = user.name
+    } else {
+      recordJson.userName = ''
+    }
+    recordArray.push(recordJson)
+    // console.log(recordM.userName)
+  }
+  console.log('recordArray: ', recordArray)
+}
+doSome()
+return
+
 let appJson = { bundleId: 'com.mxr.money',
   version: '1.0.1',
   osType: 'android',
