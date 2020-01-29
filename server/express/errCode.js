@@ -11,10 +11,12 @@ const ERRCODE = {
   uploadFileError: 10008,
   shopNotExist: 10009,
   cardNotExist: 10010,
-  //
+  recordNotExist: 10011,
+  deleteRecordDateErr: 10012,
+  //   //
   // app相关
-  headerNotValid: 10011,
-  appNotExist: 10012
+  headerNotValid: 20011,
+  appNotExist: 20012
 }
 Object.freeze(ERRCODE)
 
@@ -31,10 +33,12 @@ let ErrMsgDic = {
   10008: '上传文件失败',
   10009: '门店不存在',
   10010: '信用卡不存在',
+  10011: '该消费记录不存在',
+  10012: '删除记录的日期不合法',
   //
   //
-  10011: '头部信息有误',
-  10012: '该app不存在或已下架'
+  20011: '头部信息有误',
+  20012: '该app不存在或已下架'
 }
 
 module.exports = {

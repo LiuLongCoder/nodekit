@@ -296,6 +296,48 @@ function expressFunction (app) {
     }
   })
 
+  /* 删除某个购买记录， 只能删除当天的
+  * { recordId: [string] }
+  * */
+  app.post(MyURL.URL_User_DeletePayRecord, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let params = _MoneyExpressParams(req)
+      let userId = _MoneyExpressUserIdFromHeader(req)
+      if (!_MoneyExpressValidateKey(params, ['recordId'])) {
+        responseModel.setErrCode(ERRCODE.loseParameter)
+      } else {
+        let record = await Model.MoneyRecord.findOne({ _id: params['recordId'] })
+        console.log('get record: ', record)
+        if (record) {
+          let nowMoment = Moment()
+          let dateMoment = Moment(record.date)
+
+          if (nowMoment.get('year') === dateMoment.get('year') && nowMoment.get('date') === dateMoment.get('date')) {
+            let ret = await Model.MoneyRecord.deleteOne({ _id: record._id })
+            if (ret && ret.deletedCount >= 1) {
+              console.log('[info] delete pay record success: ', ret)
+              responseModel.Body = ret
+            } else {
+              responseModel.setErrCode(ERRCODE.serverError)
+            }
+          } else {
+            responseModel.setErrCode(ERRCODE.deleteRecordDateErr)
+          }
+        } else {
+          responseModel.setErrCode(ERRCODE.recordNotExist)
+        }
+      }
+      console.log('>>>> ret : ', responseModel.toJSON())
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 删除信用卡记录失败: ', e)
+    }
+  })
+
   /** 获取信用卡刷卡记录
    * {userId, [string]}
    * {cardIds: [string], shopIds: [string], 'page': [number], 'pageSize': [number], 'fromDate': [string], toDate: [string]}   shopIds、cardIds 以','隔开
