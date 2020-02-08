@@ -743,6 +743,305 @@ function expressFunction (app) {
     }
   })
 
+  /* 获取信用卡信息图表数据
+  * {}
+  * */
+  app.get(MyURL.URL_User_GetCardChartsInfo, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let userId = _MoneyExpressUserIdFromHeader(req)
+      if (userId) {
+        let cards = await Model.MoneyCard.find({user: userId})
+        let cardMap = {}
+        for (let key in cards) {
+          let card = cards[key]
+          cardMap[card._id.toString()] = card // .toJSON()
+        }
+
+        let groupAggregateJson = {
+          $group: {
+            _id: { card: '$card' },
+            card: { $first: '$card' },
+            count: { $sum: 1 },
+            price: { $sum: '$price' }
+            // returnPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } }
+          }
+        }
+        let lookupCardJson = { $lookup: { from: 'money_card_t', localField: 'card', foreignField: '_id', as: 'cardModel' } }
+        let cardIdArrayFilter = []
+        let matchJson = {}
+        for (let key in cards) {
+          cardIdArrayFilter.push(Mongoose.Types.ObjectId(cards[key]._id))
+        }
+        if (cardIdArrayFilter.length > 0) {
+          matchJson.card = { $in: cardIdArrayFilter }
+        }
+        let matchAggregateJson = { $match: matchJson }
+        /// 获取该用户所有信用卡刷卡的总额
+        let wrapDocs = await Model.MoneyRecord.aggregate([matchAggregateJson, groupAggregateJson]).exec()
+        /// 根据刷卡金额升序进行排序
+        wrapDocs.sort(function (a, b) {
+          return a.price > b.price ? 1 : -1
+        })
+        for (let key in wrapDocs) {
+          let item = wrapDocs[key]
+          let card = cardMap[item.card]
+          if (card) {
+            item.bank = card.bank
+            item.cardNumber = card.cardNumber
+          }
+        }
+
+        let cardAllMontyChart = { chartId: 'cardAllMontyChartId', chartTitle: '刷卡总额', chartType: 'mix' }
+        let bankCategories = []
+        let allPriceData = []
+        let allCountData = []
+        cardAllMontyChart.categories = bankCategories
+        cardAllMontyChart.series = [{ name: '刷卡次数', data: allCountData, type: 'line' }, { name: '刷卡金额', data: allPriceData, type: 'line' }]
+        for (let key in wrapDocs) {
+          let doc = wrapDocs[key]
+          allPriceData.push(doc.price + '')
+          allCountData.push(doc.count + '')
+          bankCategories.push(doc.bank)
+        }
+        // console.log(cardAllMontyChart)
+        /// ========================================================================
+        /// 每张银行卡根据月份进行金额统计， 过去的12个月
+        let cardMontyMonthChart = { chartId: 'cardMonthMontyChartId', chartTitle: '按月刷卡总额', chartType: 'mix' }
+        let monthCategories = []
+        cardMontyMonthChart.categories = monthCategories
+        cardMontyMonthChart.series = []
+
+        let cardMonthMontyDataMap = {}
+        for (let key in cardMap) {
+          cardMonthMontyDataMap[key] = []
+        }
+
+        let tmpNumber = 1
+        for (let i = 11; i >= 0; i--) {
+          let firstDayMonthMoment = Moment().set('date', 1)
+          firstDayMonthMoment.subtract(i, 'month')
+          let year = firstDayMonthMoment.get('year')
+          let month = firstDayMonthMoment.get('month')
+          let f = Moment({ year: year, month: month, date: 1, hour: 0, minute: 0, second: 0 })
+          let t = Moment(f).add(1, 'month').subtract(1, 'second')
+          let fromDate = new Date(f.get('year'), f.get('month'), f.get('date'), f.get('hour'), f.get('minute'), f.get('second'))
+          let toDate = new Date(t.get('year'), t.get('month'), t.get('date'), t.get('hour'), t.get('minute'), t.get('second'))
+          let cardRecordMatchJson = { card: { $in: cardIdArrayFilter }, date: { $gte: fromDate, $lte: toDate } }
+          matchAggregateJson = { $match: cardRecordMatchJson }
+          let cardDocs = await Model.MoneyRecord.aggregate([matchAggregateJson, lookupCardJson, groupAggregateJson]).exec()
+          if (cardDocs.length > 0) {
+            monthCategories.push(firstDayMonthMoment.format('YYYY-MM'))
+            for (let key in cardDocs) {
+              let doc = cardDocs[key]
+              let data = cardMonthMontyDataMap[doc.card]
+              data && data.push(doc.price + '')
+            }
+            /// 给没有的补0
+            for (let key in cardMonthMontyDataMap) {
+              let cardMonthMontyData = cardMonthMontyDataMap[key]
+              if (cardMonthMontyData.length < tmpNumber) {
+                cardMonthMontyData.push('0')
+              }
+            }
+            tmpNumber++
+          }
+        }
+        /// 过滤全是0的
+        for (let key in cardMonthMontyDataMap) {
+          let cardMonthMontyData = cardMonthMontyDataMap[key]
+          let hasValidPrice = false
+          if (Array.isArray(cardMonthMontyData)) {
+            for (let key in cardMonthMontyData) {
+              let priceStr = cardMonthMontyData[key]
+              if (priceStr !== '0') {
+                hasValidPrice = true
+                break
+              }
+            }
+          }
+          if (!hasValidPrice) {
+            delete cardMonthMontyDataMap[key]
+          } else {
+            let card = cardMap[key]
+            let itemSeries = { name: card.bank, type: 'line', data: cardMonthMontyData }
+            cardMontyMonthChart.series.push(itemSeries)
+          }
+        }
+
+        let charts = [cardAllMontyChart, cardMontyMonthChart]
+        responseModel.Body = charts
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取信用卡相关信息的图数据: ', e)
+    }
+  })
+
+  /* 获取信用卡还款信息图表数据
+  * {}
+  * */
+  app.get(MyURL.URL_User_GetCardRepaymentChartsInfo, async (req, res, next) => {
+    let responseModel = new ResponseModel()
+    try {
+      let userId = _MoneyExpressUserIdFromHeader(req)
+      if (userId) {
+        let cards = await Model.MoneyCard.find({ user: userId })
+        let nowMoment = Moment(Moment().format('YYYY-MM-DD'), 'YYYY-MM-DD')
+        let dayThisMonth = nowMoment.get('date')
+        let cardArray = []
+        let cardMoneyArray = []
+        for (let key in cards) {
+          let card = cards[key]
+          let cardJson = card.toJSON()
+          cardArray.push(cardJson)
+          let billDay = parseInt(card.billDayStr)
+          let repaymentDay = parseInt(card.repaymentDayStr)
+          let preBillMoment = Moment(nowMoment)
+          let preRepaymentMoment = Moment(nowMoment)
+          let billMoment = Moment(nowMoment)
+          let repaymentMoment = Moment(nowMoment)
+          let nextBillMoment = Moment(nowMoment)
+          let nextRepaymentMoment = Moment(nowMoment)
+          if (billDay < repaymentDay) {
+            if (dayThisMonth > repaymentDay) {
+              billMoment.set('date', billDay).add(1, 'month')
+              repaymentMoment.set('date', repaymentDay).add(1, 'month')
+            } else {
+              billMoment.set('date', billDay)
+              repaymentMoment.set('date', repaymentDay)
+            }
+          } else {
+            if (dayThisMonth > repaymentDay) {
+              billMoment.set('date', billDay)
+              repaymentMoment.set('date', repaymentDay).add(1, 'month')
+            } else {
+              billMoment.set('date', billDay).subtract(1, 'month')
+              repaymentMoment.set('date', repaymentDay)
+            }
+          }
+          preBillMoment = Moment(billMoment).subtract(1, 'month')
+          preRepaymentMoment = Moment(repaymentMoment).subtract(1, 'month')
+          nextBillMoment = Moment(billMoment).add(1, 'month')
+          nextRepaymentMoment = Moment(repaymentMoment).add(1, 'month')
+          /// 计算合理日期
+          let durationCurrentRepayment = -1 // 该信用卡距离这次还款日的天数
+          let durationNextBill = 0 // 该信用卡距离下次账单日的天数
+          let durationNextRepayment = 0 // 该信用卡距离下次还款日的天数
+          let cardTotalMoney = 0 // 该信用卡已经刷出的总额
+          let nowSeconds = nowMoment.unix()
+          let oneDaySeconds = (60 * 60 * 24)
+          if (nowMoment.isSameOrBefore(billMoment)) {
+            let billSeconds = billMoment.unix()
+            durationNextBill = (billSeconds - nowSeconds) / oneDaySeconds + 1
+            let repaymentSeconds = repaymentMoment.unix()
+            durationNextRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds + 1
+          } else {
+            let nextBillSeconds = nextBillMoment.unix()
+            durationNextBill = (nextBillSeconds - nowSeconds) / oneDaySeconds + 1
+            let nextRepaymentSeconds = nextRepaymentMoment.unix()
+            durationNextRepayment = (nextRepaymentSeconds - nowSeconds) / oneDaySeconds + 1
+            if (nowMoment.isSameOrBefore(repaymentMoment)) {
+              let repaymentSeconds = repaymentMoment.unix()
+              durationCurrentRepayment = (repaymentSeconds - nowSeconds) / oneDaySeconds + 1
+            }
+          }
+          let records = await Model.MoneyRecord.find({ card: card._id, repaymentState: 0 })
+          let meiYouHuanMoney = 0
+          let jiangYaoHuanMoney = 0
+          let haiMeiChuLaiMoney = 0
+          for (let recordKey in records) {
+            let record = records[recordKey]
+            let price = record.price
+            let payMoment = Moment(record.dateStr, 'YYYY-MM-DD')
+            if (payMoment.isSameOrBefore(preBillMoment)) {
+              meiYouHuanMoney += price
+            } else if (payMoment.isSameOrBefore(billMoment) && !nowMoment.isSameOrBefore(billMoment)) {
+              jiangYaoHuanMoney += price
+            } else if (payMoment.isSameOrBefore(nextBillMoment)) {
+              haiMeiChuLaiMoney += price
+            }
+            cardTotalMoney = jiangYaoHuanMoney + haiMeiChuLaiMoney
+          }
+
+          cardJson.billDate = billMoment.format('YYYY-MM-DD')
+          cardJson.repaymentDate = repaymentMoment.format('YYYY-MM-DD')
+          cardJson.durationCurrentRepayment = durationCurrentRepayment
+          cardJson.durationNextBill = durationNextBill
+          cardJson.durationNextRepayment = durationNextRepayment
+          cardJson.expireMoney = meiYouHuanMoney
+          cardJson.willRepaymentMoney = jiangYaoHuanMoney
+          cardJson.waitRepaymentMoney = haiMeiChuLaiMoney
+          cardJson.billMoment = billMoment
+          cardJson.nextBillMoment = nextBillMoment
+
+          let firstMoneyJson = {}
+          firstMoneyJson.bank = card.bank
+          // Object.assign(firstMoneyJson, cardJson)
+          let secondMoneyJson = {}
+          secondMoneyJson.bank = card.bank
+          // Object.assign(secondMoneyJson, cardJson)
+
+          if (!nowMoment.isSameOrBefore(billMoment)) {
+            firstMoneyJson.money = jiangYaoHuanMoney
+            firstMoneyJson.moment = repaymentMoment
+            secondMoneyJson.money = haiMeiChuLaiMoney
+            secondMoneyJson.moment = nextRepaymentMoment
+            if (firstMoneyJson.money > 0) {
+              cardMoneyArray.push(firstMoneyJson)
+            }
+            if (secondMoneyJson.money > 0) {
+              cardMoneyArray.push(secondMoneyJson)
+            }
+          } else {
+            firstMoneyJson.money = haiMeiChuLaiMoney
+            firstMoneyJson.moment = repaymentMoment
+            if (firstMoneyJson.money > 0) {
+              cardMoneyArray.push(firstMoneyJson)
+            }
+          }
+        }
+
+        cardMoneyArray.sort(function (first, second) {
+          return first.moment.isAfter(second.moment) ? 1 : -1
+        })
+
+        let chartItemOne = { chartId: 'cardId', chartTitle: '信用卡还款', chartType: 'mix' }
+        let categories = []
+        let cardMoneyDataArray = []
+        let cardMoneySeries = { name: '刷卡金额', type: 'line', data: cardMoneyDataArray }
+
+        let cardAllMoneyDataArray = []
+        let cardAllMoneySeries = { name: '总金额', type: 'line', data: cardAllMoneyDataArray }
+        chartItemOne.categories = categories
+        chartItemOne.series = [cardMoneySeries, cardAllMoneySeries]
+
+        let tmpMoney = 0
+        for (let key in cardMoneyArray) {
+          let cardChartJson = cardMoneyArray[key]
+          cardChartJson.moment = cardChartJson.moment.format('M-D')
+          categories.push(cardChartJson.moment + cardChartJson.bank.substring(0, 4))
+          let money = cardChartJson.money
+          cardMoneyDataArray.push(money + '')
+          tmpMoney += money
+          cardAllMoneyDataArray.push(tmpMoney + '')
+        }
+        let charts = [chartItemOne]
+        responseModel.Body = charts
+        // console.log(chartItemOne)
+      }
+      res.json(responseModel.toJSON())
+    } catch (e) {
+      responseModel.setErrCode(ERRCODE.serverError)
+      responseModel.Header.ErrMsg += e
+      res.json(responseModel.toJSON())
+      console.error('[err] >>> 获取信用卡还款信息图表数据: ', e)
+    }
+  })
+
   /* 信用卡还款
   * {userId:[string], cardId: [string]}
   * */
