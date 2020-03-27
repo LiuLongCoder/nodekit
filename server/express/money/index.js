@@ -751,7 +751,7 @@ function expressFunction (app) {
     try {
       let userId = _MoneyExpressUserIdFromHeader(req)
       if (userId) {
-        let cards = await Model.MoneyCard.find({user: userId})
+        let cards = await Model.MoneyCard.find({ user: userId })
         let cardMap = {}
         for (let key in cards) {
           let card = cards[key]
@@ -797,7 +797,7 @@ function expressFunction (app) {
         let allPriceData = []
         let allCountData = []
         cardAllMontyChart.categories = bankCategories
-        cardAllMontyChart.series = [{ name: '刷卡次数', data: allCountData, type: 'line' }, { name: '刷卡金额', data: allPriceData, type: 'line' }]
+        cardAllMontyChart.series = [{ name: '刷卡次数', data: allCountData, type: 'column' }, { name: '刷卡金额', data: allPriceData, type: 'line' }]
         for (let key in wrapDocs) {
           let doc = wrapDocs[key]
           allPriceData.push(doc.price + '')
@@ -869,7 +869,47 @@ function expressFunction (app) {
           }
         }
 
-        let charts = [cardAllMontyChart, cardMontyMonthChart]
+        // =============================================================
+        // 按月统计刷卡总金额
+        let moneyMonthChart = { chartId: 'monthMontyChartId', chartTitle: '按月统计刷卡总金额', chartType: 'mix' }
+        let moneyMonthCategories = []
+        let moneyMonthData = []
+        let moneyMonthCountDate = []
+        moneyMonthChart.categories = moneyMonthCategories
+        moneyMonthChart.series = [{ name: '总金额', type: 'line', data: moneyMonthData }, { name: '刷卡次数', type: 'column', data: moneyMonthCountDate }]
+
+        let groupAggregateJson2 = {
+          $group: {
+            _id: { noUsed: '1' },
+            // card: { $first: '$card' },
+            count: { $sum: 1 },
+            price: { $sum: '$price' }
+            // returnPrice: { $sum: { $multiply: ['$price', { $subtract: [1, '$rate'] }] } }
+          }
+        }
+        for (let i = 11; i >= 0; i--) {
+          let firstDayMonthMoment = Moment().set('date', 1)
+          firstDayMonthMoment.subtract(i, 'month')
+          let year = firstDayMonthMoment.get('year')
+          let month = firstDayMonthMoment.get('month')
+          let f = Moment({ year: year, month: month, date: 1, hour: 0, minute: 0, second: 0 })
+          let t = Moment(f).add(1, 'month').subtract(1, 'second')
+          let fromDate = new Date(f.get('year'), f.get('month'), f.get('date'), f.get('hour'), f.get('minute'), f.get('second'))
+          let toDate = new Date(t.get('year'), t.get('month'), t.get('date'), t.get('hour'), t.get('minute'), t.get('second'))
+          let cardRecordMatchJson = { card: { $in: cardIdArrayFilter }, date: { $gte: fromDate, $lte: toDate } }
+          matchAggregateJson = { $match: cardRecordMatchJson }
+          let cardDocs = await Model.MoneyRecord.aggregate([matchAggregateJson, groupAggregateJson2]).exec()
+          if (cardDocs.length > 0) {
+            moneyMonthCategories.push(firstDayMonthMoment.format('YYYY-MM'))
+            for (let key in cardDocs) {
+              let doc = cardDocs[key]
+              moneyMonthData.push(doc.price + '')
+              moneyMonthCountDate.push(doc.count + '')
+            }
+          }
+        }
+
+        let charts = [cardAllMontyChart, cardMontyMonthChart, moneyMonthChart]
         responseModel.Body = charts
       }
       res.json(responseModel.toJSON())

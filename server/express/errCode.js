@@ -17,6 +17,7 @@ const ERRCODE = {
   // app相关
   headerNotValid: 20011,
   appNotExist: 20012
+  /// log
 }
 Object.freeze(ERRCODE)
 

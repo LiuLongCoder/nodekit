@@ -9,6 +9,8 @@ const log_crash_schema = new Mongoose.Schema({
   machineModel: { type: String },
   /// 手机型号名称 “iPhone 8“
   machineModelName: { type: String },
+  /// 设备标识
+  deviceId: { type: String },
   /// 系统版本
   osVersion: { type: String },
   /// APP名称
